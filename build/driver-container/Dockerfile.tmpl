@@ -1,0 +1,43 @@
+FROM registry.redhat.io/ubi8/ubi
+
+WORKDIR /
+
+RUN yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-8.noarch.rpm
+RUN yum -y install dkms make uuid xz wget kernel-devel procps-ng pciutils
+
+COPY bindata/rpm/driver/${OPAE_RPM_NAME} rpm/
+
+ENV KERNEL_VERSION_MAJOR=${KERNEL_VERSION_MAJOR}
+ENV KERNEL_VERSION_MINOR=${KERNEL_VERSION_MINOR}
+ENV KERNEL_ARCH=${KERNEL_ARCH}
+
+# TODO: remove this when we have the right kernel-devel in the repo
+# This required to use a VPN connection
+# rhel-8-for-x86_64-rt-rpms subscription is required to install kernel-rt through yum, instead manually install rpms.
+RUN rpm -Uvh --nodeps \
+       ${PACKAGE_URL}/${KERNEL_TYPE}-${KERNEL_VERSION_MAJOR}-${KERNEL_VERSION_MINOR}.${KERNEL_ARCH}.rpm \
+       ${PACKAGE_URL}/${KERNEL_TYPE}-core-${KERNEL_VERSION_MAJOR}-${KERNEL_VERSION_MINOR}.${KERNEL_ARCH}.rpm \
+       ${PACKAGE_URL}/${KERNEL_TYPE}-modules-${KERNEL_VERSION_MAJOR}-${KERNEL_VERSION_MINOR}.${KERNEL_ARCH}.rpm \
+       ${PACKAGE_URL}/${KERNEL_TYPE}-devel-${KERNEL_VERSION_MAJOR}-${KERNEL_VERSION_MINOR}.${KERNEL_ARCH}.rpm
+
+RUN rpm -Uvh --noscripts /rpm/${OPAE_RPM_NAME}
+
+RUN dkms build install -k ${KERNEL_VERSION_MAJOR}-${KERNEL_VERSION_MINOR}.${KERNEL_ARCH} -m ${OPAE_MODULE_NAME} -v ${OPAE_MODULE_VERSION}
+
+FROM registry.redhat.io/ubi8/ubi
+
+RUN yum install -y kmod
+
+
+COPY /bindata/bin/driver-container-entrypoint.sh /entrypoint.sh
+
+
+ENV KERNEL_VERSION_MAJOR=${KERNEL_VERSION_MAJOR}
+ENV KERNEL_VERSION_MINOR=${KERNEL_VERSION_MINOR}
+ENV KERNEL_ARCH=${KERNEL_ARCH}
+
+ENTRYPOINT ["/entrypoint.sh"]
+
+#COPY --from=0 /lib/modules/${KERNEL_VERSION_MAJOR}-${KERNEL_VERSION_MINOR}.${KERNEL_ARCH}/extra /lib/modules/${KERNEL_VERSION_MAJOR}-${KERNEL_VERSION_MINOR}.${KERNEL_ARCH}/extra
+COPY --from=0 /lib/modules/${KERNEL_VERSION_MAJOR}-${KERNEL_VERSION_MINOR}.${KERNEL_ARCH}/extra /var/extra
+
